@@ -1,0 +1,360 @@
+---
+title: "Applying resampling methods to regression model"
+output: html_notebook
+---
+
+```{r}
+# importing packages
+library(dplyr)
+library(fastDummies)
+library(ggplot2)
+library(tidyr)
+library(diptest)
+library(LaplacesDemon)
+library(mousetrap)
+library(multimode)
+library(haven)
+library(datasets)
+library(jtools)
+library(car)
+library(caret)
+library(psych)
+library(rlang)
+library(boot)
+```
+```{r}
+# reading data
+df <- read.csv("https://raw.githubusercontent.com/meetgojiya98/Business_Analytics_MBA6636/main/Assignment%201/MBA6636_SM21_Professor_Proposes_Data.csv")
+```
+```{r}
+#changing the type of 'Price' variable to numeric type and removing the '$' sign
+df$Price = as.numeric(gsub('[$,]', '', df$Price))
+```
+```{r}
+#Filling in missing values 
+df <- df %>% fill(Price, .direction = 'down')
+```
+```{r}
+# Clubbing the 'I2' clarity type into 'I1', 'VVS1' and 'VVS2' clarity type into 'VS2' and creating a new variable
+df <- df %>%
+  mutate(ClarityN = case_when(
+    startsWith(Clarity, "I1") ~ "I1",
+    startsWith(Clarity, "I2") ~ "I1",
+    startsWith(Clarity, "VVS1") ~ "VS2",
+    startsWith(Clarity, "VVS2") ~ "VS2",
+    startsWith(Clarity, "SI1") ~ "SI1",
+    startsWith(Clarity, "SI2") ~ "SI2",
+    startsWith(Clarity, "SI3") ~ "SI2",
+    startsWith(Clarity, "VS1") ~ "VS1",
+    startsWith(Clarity, "VS2") ~ "VS2"
+    ))
+```
+```{r}
+# Clubbing the colours into 4 categories and creating a new variable
+df <- df %>%
+  mutate(ColourN = case_when(
+    startsWith(Colour, "D") ~ "Colorless",
+    startsWith(Colour, "E") ~ "Colorless",
+    startsWith(Colour, "F") ~ "Colorless",
+    startsWith(Colour, "G") ~ "Near Colorless",
+    startsWith(Colour, "H") ~ "Near Colorless",
+    startsWith(Colour, "I") ~ "Near Colorless",
+    startsWith(Colour, "J") ~ "Faint Yellow",
+    startsWith(Colour, "K") ~ "Faint Yellow",
+    startsWith(Colour, "L") ~ "Very Light Yellow"
+    ))
+```
+```{r}
+# Clubbing the colours into 2 categories and creating a new variable
+df <- df %>%
+  mutate(Colour2C = case_when(
+    startsWith(ColourN, "Colorless") ~ "Colorless",
+    startsWith(ColourN, "Near Colorless") ~ "Colorless",
+    startsWith(ColourN, "Faint Yellow") ~ "Yellow",
+    startsWith(ColourN, "Very Light Yellow") ~ "Yellow"
+    ))
+```
+```{r}
+# Creating new variable based off of the Cut variable
+df <- df %>%
+  mutate(CutN = case_when(
+    startsWith(Cut, "F") ~ "Fair",
+    startsWith(Cut, "G") ~ "Good",
+    startsWith(Cut, "I") ~ "Ideal",
+    startsWith(Cut, "V") ~ "Very Good",
+    startsWith(Cut, "X") ~ "Excllent"
+    ))
+```
+```{r}
+# Clubbing the Certifications into 2 categories and creating a new variable
+df <- df %>%
+  mutate(CertG = case_when(
+    startsWith(Certification, "AGS") ~ "AGS - GIA",
+    startsWith(Certification, "DOW") ~ "Rest",
+    startsWith(Certification, "EGL") ~ "Rest",
+    startsWith(Certification, "GIA") ~ "AGS - GIA",
+    startsWith(Certification, "IGI") ~ "Rest"
+    ))
+```
+```{r}
+# Creating new variable based off of the Polish variable
+df <- df %>%
+  mutate(PolishN = case_when(
+    startsWith(Polish, "F") ~ "Fair",
+    startsWith(Polish, "G") ~ "Good",
+    startsWith(Polish, "I") ~ "Ideal",
+    startsWith(Polish, "V") ~ "Very Good",
+    startsWith(Polish, "X") ~ "Excllent"
+    ))
+```
+```{r}
+# Creating new variable with 2 categories based off of the Polish variable
+df <- df %>%
+  mutate(Polish2C = case_when(
+    startsWith(PolishN, "Fair") ~ "Fair - Good",
+    startsWith(PolishN, "Good") ~ "Fair - Good",
+    startsWith(PolishN, "Ideal") ~ "Very Good - Ideal",
+    startsWith(PolishN, "Very Good") ~ "Very Good - Ideal",
+    startsWith(PolishN, "Good") ~ "Very Good - Ideal",
+    startsWith(PolishN, "Excllent") ~ "Very Good - Ideal"
+    ))
+```
+**Polish**: The frequency of Ideal and Fair category within the Polish variable were extremely low. In order to bring balance, Polish variable is categorized in two categories, Fair - Good, and Very Good - Ideal.
+```{r}
+# Creating new variable based off of the Symmetry variable
+df <- df %>%
+  mutate(SymmetryN = case_when(
+    startsWith(Symmetry, "F") ~ "Fair",
+    startsWith(Symmetry, "G") ~ "Good",
+    startsWith(Symmetry, "I") ~ "Ideal",
+    startsWith(Symmetry, "V") ~ "Very Good",
+    startsWith(Symmetry, "X") ~ "Excellent",
+    ))
+```
+```{r}
+# Creating high carat, high price dataset 
+highPricedf <- df %>%
+  filter(Price >= 1500) 
+```
+```{r}
+# Creating low carat, low price dataset 
+lowPricedf <- df %>%
+  filter(Price < 1500) 
+```
+# Model Building
+```{r}
+# running a simple linear regression model with Price as a response variable and Carat as explanatory variable 
+priceCarat <- lm(formula = Price ~ Carat, data = highPricedf)
+
+# model summary
+summary(priceCarat)
+summ(priceCarat)
+```
+There is some correlation between Carat and Price variables as the R-squared is around 11%. But the regression coefficient of Carat is negative, which is unexpected as high carat diamonds must have high price. Carat has a p-value of 2.12e-07. Since this value is in the range [0, 0.001], it has a significance code of ***. Hence, Carat is statistically significant predictor of diamond price.
+```{r}
+# Plotting a simple linear regression model with Price as a response variable and Carat as explanatory variable 
+effect_plot(priceCarat, pred = Carat, interval = TRUE, plot.points = TRUE, rug = TRUE, partial.residuals = TRUE)
+```
+```{r}
+# running a simple linear regression model with Price as a response variable and ClarityN as explanatory variable 
+priceClarityN <- lm(formula = Price ~ ClarityN, data = df)
+
+# model summary
+summary(priceClarityN)
+summ(priceClarityN)
+```
+The R-squared is reasonably high at around 30%, which indicated strong correlation between Price and Clarity. Since clarity's p-value value is in the range [0, 0.001], it has a significance code of ***. Hence, Carat is statistically significant predictor of diamond price.
+```{r}
+# Plotting a simple linear regression model with Price as a response variable and ClarityN as explanatory variable 
+effect_plot(priceClarityN, pred = ClarityN, interval = TRUE, plot.points = TRUE, rug = TRUE, partial.residuals = TRUE)
+```
+```{r}
+# running a simple linear regression model with Price as a response variable and CertG as explanatory variable 
+priceCertG <- lm(formula = Price ~ CertG, data = highPricedf)
+
+# model summary
+summary(priceCertG)
+summ(priceCertG)
+```
+After clubbing the categories, we observed that the R-squared is around 5%, which is noticeable.
+```{r}
+# Plotting a simple linear regression model with Price as a response variable and CertG as explanatory variable 
+effect_plot(priceCertG, pred = CertG, interval = TRUE, plot.points = TRUE, rug = TRUE, partial.residuals = TRUE)
+```
+```{r}
+# running a simple linear regression model with Price as a response variable and CutN as explanatory variable 
+priceCutN <- lm(formula = Price ~ CutN, data = highPricedf)
+
+# model summary
+summary(priceCutN)
+summ(priceCutN)
+```
+Here, the R-suared is 14%, which is considered as good.It also has high significance level. So, overall it's a good feature.
+```{r}
+# Plotting a simple linear regression model with Price as a response variable and CutN as explanatory variable 
+effect_plot(priceCutN, pred = CutN, interval = TRUE, plot.points = TRUE, rug = TRUE, partial.residuals = TRUE)
+```
+```{r}
+# running a simple linear regression model with Price as a response variable and Polish2C as explanatory variable 
+pricePolish2C <- lm(formula = Price ~ Polish2C, data = highPricedf)
+
+# model summary
+summary(pricePolish2C)
+summ(pricePolish2C)
+```
+The R-squared is 11%, which indicates good correlation between Price and Polish. Polish is statistically significant predictor of diamond price.
+```{r}
+# Plotting a simple linear regression model with Price as a response variable and Polish2C as explanatory variable 
+effect_plot(pricePolish2C, pred = Polish2C, interval = TRUE, plot.points = TRUE, rug = TRUE, partial.residuals = TRUE)
+```
+```{r}
+# running a simple linear regression model with Price as a response variable and SymmetryN as explanatory variable 
+priceSymmetryN <- lm(formula = Price ~ SymmetryN, data = df)
+
+# model summary
+summary(priceSymmetryN)
+summ(priceSymmetryN)
+```
+The R-squared is just around 6%, which indicated not so good correlation between Price and Symmetry. Since Since it has no significance code, it's not a statistically significant predictor of diamond price.
+```{r}
+# Plotting a simple linear regression model with Price as a response variable and SymmetryN as explanatory variable 
+effect_plot(priceSymmetryN, pred = SymmetryN, interval = TRUE, plot.points = TRUE, rug = TRUE, partial.residuals = TRUE)
+```
+```{r}
+# running a simple linear regression model with Price as a response variable and Colour2C as explanatory variable 
+priceColour2C <- lm(formula = Price ~ Colour2C, data = highPricedf)
+
+# model summary
+summary(priceColour2C)
+summ(priceColour2C)
+```
+R-square is just around 2%, which is low. It a sign of weak correlation.
+```{r}
+# Plotting a simple linear regression model with Price as a response variable and Colour2C as explanatory variable 
+effect_plot(priceColour2C, pred = Colour2C, interval = TRUE, plot.points = TRUE, rug = TRUE, partial.residuals = TRUE)
+```
+```{r}
+# running a multiple linear regression model with Price as a response variable and CutN, Colour2C, ClarityN, CertG, Polish2C, Carat as explanatory variable 
+priceMulti <- lm(formula = Price ~ CutN + Colour2C + ClarityN + CertG + Polish2C + Carat, data = highPricedf)
+
+# model summary
+summary(priceMulti)
+summ(priceMulti)
+```
+Here, R-squared is 45% and adjusted R-squared is 42%, which is fairly high. This model is statistically significant predictor of the price of the diamond.
+
+```{r}
+# running a multiple linear regression model with Price as a response variable and Colour2C, ClarityN, CertG, Polish2C, Carat as explanatory variable 
+priceMulti2 <- lm(formula = Price ~ Colour2C + ClarityN + CertG + Polish2C + Carat, data = lowPricedf)
+
+# model summary
+summary(priceMulti2)
+summ(priceMulti2)
+```
+Here, the R-squared is extremely high, coming at 93%. 
+
+# Cross-validation
+```{r}
+df_ctrl <- trainControl(method = "cv", number = 5)
+
+# 5-Fold cross-validation
+priceMultiCv <- lm(formula = Price ~ CutN + Colour2C + ClarityN + CertG + Polish2C + Carat, data = highPricedf)
+priceMultiCv
+# model summary
+summary(priceMultiCv)
+summ(priceMultiCv)
+```
+```{r}
+df_ctrl <- trainControl(method = "cv", number = 3)
+
+# 3-Fold cross-validation
+priceMultiCv <- lm(formula = Price ~ CutN + Colour2C + ClarityN + CertG + Polish2C + Carat, data = highPricedf)
+priceMultiCv
+# model summary
+summary(priceMultiCv)
+summ(priceMultiCv)
+```
+```{r}
+# Fit lm model using 10-fold CV: model
+looMo <- train(
+  Price ~ CutN + Colour2C + ClarityN + CertG + Polish2C + Carat, 
+  highPricedf,
+  method = "lm",
+  trControl = trainControl(
+    method = "cv", 
+    number = 10,
+    verboseIter = TRUE
+  ),
+  na.action = na.pass
+)
+
+# Print model to console
+looMo
+```
+
+```{r}
+#Leave-One-Out Cross-Validation
+loo <- trainControl(method = "LOOCV")
+
+#fit a regression model and use LOOCV to evaluate performance
+looModel <- train(Price ~ CutN + Colour2C + ClarityN + CertG + Polish2C + Carat, data = highPricedf, method = "lm", trControl = loo, na.action = na.pass)
+
+#view summary of LOOCV               
+print(looModel)
+```
+# Bootstrap
+```{r}
+# Bootstrap resampling
+bootFun <- function(d, i){
+	d2 <- d[i,]
+	return(cor(highPricedf$Price, highPricedf$Carat))
+}
+
+set.seed(626)
+bootcr <- boot(highPricedf, bootFun, R=500)
+bootcr
+summary(bootcr)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
