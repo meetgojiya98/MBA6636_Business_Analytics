@@ -1,1 +1,1 @@
-# Business_Analytics_MBA6636
+# MBA6636 Business Analytics
